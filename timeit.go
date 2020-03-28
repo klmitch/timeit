@@ -15,8 +15,22 @@
 package timeit
 
 import (
+	"encoding/json"
 	"math"
 	"time"
+)
+
+// MarshalFlags contains a set of flags that controls how the Data
+// will be marshaled into JSON or YAML.
+type MarshalFlags uint8
+
+// Recognized flags; these indicate which of the variance and standard
+// deviation fields should be included in the marshaled object.
+const (
+	Variance       MarshalFlags = 1 << iota // Include Variance
+	SampleVariance                          // Include SampleVariance
+	StdDev                                  // Include StdDev
+	SampleStdDev                            // Include SampleStdDev
 )
 
 // Data contains the accumulated timing data.
@@ -25,6 +39,7 @@ type Data struct {
 	Mean    time.Duration // The current running mean
 	Max     time.Duration // Maximum sample seen so far
 	Min     time.Duration // Minimum sample seen so far
+	Flags   MarshalFlags  // Bitmask of computed fields to marshal
 	Next    *Data         // Another Data instance to update
 	m2      time.Duration // Sum of square differences
 }
@@ -105,4 +120,138 @@ func (d *Data) TimeIt(fn func()) (delta time.Duration) {
 	fn()
 
 	return
+}
+
+// dataMarshaled contains the Data, along with the requested computed
+// fields, which will then be marshaled into either JSON or YAML.
+type dataMarshaled struct {
+	Samples        *int64         `json:"samples" yaml:"samples"`
+	Mean           *time.Duration `json:"mean" yaml:"mean"`
+	Max            *time.Duration `json:"max" yaml:"max"`
+	Min            *time.Duration `json:"min" yaml:"min"`
+	Variance       *time.Duration `json:"variance,omitempty" yaml:"variance,omitempty"`
+	SampleVariance *time.Duration `json:"sample_variance,omitempty" yaml:"sample_variance,omitempty"`
+	StdDev         *time.Duration `json:"std_dev,omitempty" yaml:"std_dev,omitempty"`
+	SampleStdDev   *time.Duration `json:"sample_std_dev,omitempty" yaml:"sample_std_dev,omitempty"`
+}
+
+// toData converts a dataMarshaled instance back into a Data instance.
+// It guesses the Flags value based on the available data.
+func (dm *dataMarshaled) toData(d *Data) {
+	// Convert the basic data
+	if dm.Samples != nil {
+		d.Samples = *dm.Samples
+	}
+	if dm.Mean != nil {
+		d.Mean = *dm.Mean
+	}
+	if dm.Max != nil {
+		d.Max = *dm.Max
+	}
+	if dm.Min != nil {
+		d.Min = *dm.Min
+	}
+
+	// Now handle the calculated values; go from the hardest to
+	// recover m2 to the easiest, to attempt to be as accurate as
+	// possible
+	if dm.SampleStdDev != nil {
+		d.Flags |= SampleStdDev
+		if d.Samples > 1 {
+			d.m2 = *dm.SampleStdDev * *dm.SampleStdDev * time.Duration(d.Samples-1)
+		}
+	}
+	if dm.StdDev != nil {
+		d.Flags |= StdDev
+		d.m2 = *dm.StdDev * *dm.StdDev * time.Duration(d.Samples)
+	}
+	if dm.SampleVariance != nil {
+		d.Flags |= SampleVariance
+		if d.Samples > 1 {
+			d.m2 = *dm.SampleVariance * time.Duration(d.Samples-1)
+		}
+	}
+	if dm.Variance != nil {
+		d.Flags |= Variance
+		d.m2 = *dm.Variance * time.Duration(d.Samples)
+	}
+}
+
+// marshaler constructs a dataMarshaled structure from Data.
+func (d *Data) marshaler() *dataMarshaled {
+	obj := &dataMarshaled{
+		Samples: &d.Samples,
+		Mean:    &d.Mean,
+		Max:     &d.Max,
+		Min:     &d.Min,
+	}
+
+	// Add requested computed fields
+	if d.Flags == 0 || (d.Flags&Variance) != 0 {
+		tmp := d.Variance()
+		obj.Variance = &tmp
+	}
+	if d.Flags == 0 || (d.Flags&SampleVariance) != 0 {
+		tmp := d.SampleVariance()
+		obj.SampleVariance = &tmp
+	}
+	if d.Flags == 0 || (d.Flags&StdDev) != 0 {
+		tmp := d.StdDev()
+		obj.StdDev = &tmp
+	}
+	if d.Flags == 0 || (d.Flags&SampleStdDev) != 0 {
+		tmp := d.SampleStdDev()
+		obj.SampleStdDev = &tmp
+	}
+
+	return obj
+}
+
+// MarshalYAML implements yaml.Marshaler and allows a Data to be
+// serialized intelligibly as YAML.
+func (d *Data) MarshalYAML() (interface{}, error) {
+	return d.marshaler(), nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler and allows a Data to be
+// deserialized intelligibly from YAML.  Note that round-tripping
+// results in some inaccuracies in the calculations.
+func (d *Data) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Unmarshal into a dataMarshaled struct
+	dm := &dataMarshaled{}
+	if err := unmarshal(dm); err != nil {
+		return err
+	}
+
+	// Convert the dm to Data
+	dm.toData(d)
+
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler and allows a Data to be
+// serialized intelligibly as JSON.
+func (d *Data) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.marshaler())
+}
+
+// UnmarshalJSON implements json.Unmarshaler and allows a Data to be
+// deserialized intelligibly from JSON.  Note that round-tripping
+// results in some inaccuracies in the calculations.
+func (d *Data) UnmarshalJSON(text []byte) error {
+	// Implement the noop convention
+	if string(text) == "null" {
+		return nil
+	}
+
+	// Unmarshal into a dataMarshaled struct
+	dm := &dataMarshaled{}
+	if err := json.Unmarshal(text, dm); err != nil {
+		return err
+	}
+
+	// Convert the dm to Data
+	dm.toData(d)
+
+	return nil
 }
