@@ -29,9 +29,9 @@ func TestDataUpdateBase(t *testing.T) {
 	assert.Equal(t, &Data{
 		Samples: 1,
 		Mean:    time.Duration(50),
-		m2:      time.Duration(0),
 		Max:     time.Duration(50),
 		Min:     time.Duration(50),
+		m2:      time.Duration(0),
 	}, d)
 }
 
@@ -39,9 +39,9 @@ func TestDataUpdateNewMin(t *testing.T) {
 	d := &Data{
 		Samples: 1,
 		Mean:    time.Duration(50),
-		m2:      time.Duration(0),
 		Max:     time.Duration(50),
 		Min:     time.Duration(50),
+		m2:      time.Duration(0),
 	}
 
 	d.Update(time.Duration(25))
@@ -49,9 +49,9 @@ func TestDataUpdateNewMin(t *testing.T) {
 	assert.Equal(t, &Data{
 		Samples: 2,
 		Mean:    time.Duration(38),
-		m2:      time.Duration(325),
 		Max:     time.Duration(50),
 		Min:     time.Duration(25),
+		m2:      time.Duration(325),
 	}, d)
 }
 
@@ -59,9 +59,9 @@ func TestDataUpdateNewMax(t *testing.T) {
 	d := &Data{
 		Samples: 1,
 		Mean:    time.Duration(50),
-		m2:      time.Duration(0),
 		Max:     time.Duration(50),
 		Min:     time.Duration(50),
+		m2:      time.Duration(0),
 	}
 
 	d.Update(time.Duration(75))
@@ -69,9 +69,32 @@ func TestDataUpdateNewMax(t *testing.T) {
 	assert.Equal(t, &Data{
 		Samples: 2,
 		Mean:    time.Duration(62),
-		m2:      time.Duration(325),
 		Max:     time.Duration(75),
 		Min:     time.Duration(50),
+		m2:      time.Duration(325),
+	}, d)
+}
+
+func TestDataUpdateNext(t *testing.T) {
+	d := &Data{
+		Next: &Data{},
+	}
+
+	d.Update(time.Duration(50))
+
+	assert.Equal(t, &Data{
+		Samples: 1,
+		Mean:    time.Duration(50),
+		Max:     time.Duration(50),
+		Min:     time.Duration(50),
+		Next: &Data{
+			Samples: 1,
+			Mean:    time.Duration(50),
+			Max:     time.Duration(50),
+			Min:     time.Duration(50),
+			m2:      time.Duration(0),
+		},
+		m2: time.Duration(0),
 	}, d)
 }
 
@@ -180,8 +203,8 @@ func TestDataTimeIt(t *testing.T) {
 	assert.Equal(t, &Data{
 		Samples: 1,
 		Mean:    result,
-		m2:      time.Duration(0),
 		Max:     result,
 		Min:     result,
+		m2:      time.Duration(0),
 	}, d)
 }

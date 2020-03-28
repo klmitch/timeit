@@ -23,9 +23,10 @@ import (
 type Data struct {
 	Samples int64         // The number of samples developed so far
 	Mean    time.Duration // The current running mean
-	m2      time.Duration // Sum of square differences
 	Max     time.Duration // Maximum sample seen so far
 	Min     time.Duration // Minimum sample seen so far
+	Next    *Data         // Another Data instance to update
+	m2      time.Duration // Sum of square differences
 }
 
 // Update adds another sample to the Data structure.
@@ -44,6 +45,11 @@ func (d *Data) Update(sample time.Duration) {
 	d.Mean = d.Mean + delta1/time.Duration(d.Samples)
 	delta2 := sample - d.Mean
 	d.m2 = d.m2 + delta1*delta2
+
+	// Pass the sample on to Next
+	if d.Next != nil {
+		d.Next.Update(sample)
+	}
 }
 
 // Variance returns the variance of the data.  This is the square of
